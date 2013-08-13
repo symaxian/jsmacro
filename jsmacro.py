@@ -48,6 +48,8 @@ class MacroEngine(object):
         # and ensuring that whitespace separates the variable name (and value) from the 'define' text.
         self.re_define_macro = re.compile("([\\t ]*\/\/[\@|#]define[\\t ]+)(\w+)([\\t ]+(\w+))?", re.I)
 
+        self.re_replace_macro = re.compile("([\\t ]*\/\/[\@|#]replace[\\t ]+)([^\\t ]+)[\\t ]+([^\\t \\n]+)\\n", re.I)
+
         self.re_date_sub_macro = re.compile("[\@|#]\_\_date\_\_", re.I)
         self.re_time_sub_macro = re.compile("[\@|#]\_\_time\_\_", re.I)
         self.re_datetime_sub_macro = re.compile("[\@|#]\_\_datetime\_\_", re.I)
@@ -65,12 +67,15 @@ class MacroEngine(object):
 
     def reset(self):
         self.env = {}
+        self.replacements = {}
 
     def handle_define(self, key, value=DEFINE_DEFAULT):
-        if key in self.env:
-            return
+        if key not in self.env:
+            self.env[key] = eval(value)
 
-        self.env[key] = eval(value)
+    def handle_replace(self, key, value):
+        if key not in self.replacements:
+            self.replacements[key] = value
 
     def handle_if(self, arg, text):
         """
@@ -87,12 +92,11 @@ class MacroEngine(object):
             if self.env[arg]:
                 return "\n{s}".format(s=parts[0])
 
-            else:
-                try:
-                    return "{s}".format(s=parts[1])
+            try:
+                return "{s}".format(s=parts[1])
 
-                except IndexError:
-                    return ''
+            except IndexError:
+                return ''
 
         except KeyError:
             return "\n{s}".format(s=text)
@@ -110,12 +114,11 @@ class MacroEngine(object):
         if arg in self.env:
             return "\n{s}".format(s=parts[0])
 
-        else:
-            try:
-                return "{s}".format(s=parts[1])
+        try:
+            return "{s}".format(s=parts[1])
 
-            except IndexError:
-                return ''
+        except IndexError:
+            return ''
 
     def handle_ifndef(self, arg, text):
         """
@@ -133,8 +136,7 @@ class MacroEngine(object):
             except IndexError:
                 return ''
 
-        else:
-            return "\n{s}".format(s=parts[0])
+        return "\n{s}".format(s=parts[0])
 
     def handle_include(self, arg, text):
         """
@@ -170,6 +172,14 @@ class MacroEngine(object):
             self.re_time_sub_macro.sub('{s}'.format(s=now.strftime("%I:%M%p")),
             self.re_datetime_sub_macro.sub('{s}'.format(s=now.strftime("%b %d, %Y %I:%M%p")), text)))
 
+        # Parse for REPLACE statements
+        for mo in self.re_replace_macro.finditer(text):
+            if mo:
+                k = mo.group(2)  # key
+                v = mo.group(3)  # value
+
+                self.handle_replace(k, v)
+
         # Parse for DEFINE statements
         for mo in self.re_define_macro.finditer(text):
             if mo:
@@ -180,6 +190,13 @@ class MacroEngine(object):
                     v = DEFINE_DEFAULT
 
                 self.handle_define(k, v)
+
+        # Perform replacements
+        for key in self.replacements:
+            text = text.replace(key, self.replacements[key])
+
+        # Delete the REPLACE statements
+        text = self.re_replace_macro.sub('', text)
 
         # Delete the DEFINE statements
         text = self.re_define_macro.sub('', text)
@@ -234,6 +251,7 @@ def scan_and_parse_dir(srcdir, destdir, parser):
 # ---------------------------------
 #          TEST
 # ---------------------------------
+
 def scan_for_test_files(dirname, parser):
     for root, dirs, files in os.walk(dirname):
         for in_filename in files:
@@ -253,14 +271,14 @@ def scan_for_test_files(dirname, parser):
 
                 if out_target_output == in_parsed:
                     if expect_failure:
-                        print(("FAIL [{s}]".format(s=in_file_path)))
+                        print("FAIL [{s}]".format(s=in_file_path))
                     else:
-                        print(("PASS [{s}]".format(s=in_file_path)))
+                        print("PASS [{s}]".format(s=in_file_path))
                 else:
                     if expect_failure:
-                        print(("PASS [{s}]".format(s=in_file_path)))
+                        print("PASS [{s}]".format(s=in_file_path))
                     else:
-                        print(("FAIL [{s}]".format(s=in_file_path)))
+                        print("FAIL [{s}]".format(s=in_file_path))
 
                     if parser.save_expected_failures:
                         # Write the expected output file for local diffing
@@ -269,8 +287,8 @@ def scan_for_test_files(dirname, parser):
                         fout.close()
 
                     else:
-                        print(("\n-- EXPECTED --\n{s}".format(s=out_target_output)))
-                        print(("\n-- GOT --\n{s}".format(s=in_parsed)))
+                        print("\n-- EXPECTED --\n{s}".format(s=out_target_output))
+                        print("\n-- GOT --\n{s}".format(s=in_parsed))
 
                 parser.reset()
 
@@ -278,6 +296,7 @@ def scan_for_test_files(dirname, parser):
 # --------------------------------------------------
 #               MAIN
 # --------------------------------------------------
+
 if __name__ == "__main__":
     p = MacroEngine()
 
@@ -287,30 +306,29 @@ if __name__ == "__main__":
                                ["help", "file=", "srcdir=", "dstdir=", "test", "def=", "savefail", "version"])
 
     except getopt.GetoptError as err:
-        print((str(err)))
+        print(str(err))
         print(__usage__)
-
         sys.exit(2)
 
     # First handle commands that exit
     for o, a in opts:
-        if o in ["-h", "--help"]:
-            print(__usage__)
 
+        if o == "-h" or o == "--help":
+            print(__usage__)
             sys.exit(0)
 
-        if o in ["--version"]:
+        if o == "-v" or o == "--version":
             print(__version__)
-
             sys.exit(0)
 
     # Next, handle commands that config
     for o, a in opts:
-        if o in ["--def"]:
+
+        if o == "--def":
             p.handle_define(a)
             continue
 
-        if o in ["--savefail"]:
+        if o == "--savefail":
             p.save_expected_failures = True
             continue
 
@@ -319,30 +337,27 @@ if __name__ == "__main__":
 
     # Now handle commands the execute based on the config
     for o, a in opts:
-        if o in ["-s", "--srcdir"]:
+        if o == "-s" or o == "--srcdir":
             srcdir = a
 
-        if o in ["-d", "--dstdir"]:
+        if o == "-d" or o == "--dstdir":
             dstdir = a
 
             if srcdir == None:
                 raise Exception("you must set the srcdir when setting a dstdir.")
-
             else:
                 scan_and_parse_dir(srcdir, dstdir, p)
 
             break
 
-        if o in ["-f", "--file"]:
-            print((p.parse(a)))
-
+        if o == "-f" or o == "--file":
+            print(p.parse(a))
             break
 
-        if o in ["--test"]:
+        if o == "--test":
             print("Testing...")
             scan_for_test_files("testfiles", p)
             print("Done.")
-
             break
 
     sys.exit(0)
