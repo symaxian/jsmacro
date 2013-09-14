@@ -157,6 +157,24 @@ class MacroEngine(object):
         # at runtime :-)
         return getattr(self, "handle_{m}".format(m=method))(args, code)
 
+    def accumulateReplace(self, file_name):
+        now = datetime.now()
+
+        # Save this for the @import implementation
+        self._basepath = os.path.realpath(os.path.dirname(file_name))
+
+        fp = open(file_name, 'r')
+        text = fp.read()
+        fp.close()
+
+        # Parse for REPLACE statements
+        for mo in self.re_replace_macro.finditer(text):
+            if mo:
+                k = mo.group(2)  # key
+                v = mo.group(3)  # value
+
+                self.handle_replace(k, v)
+
     def parse(self, file_name):
         now = datetime.now()
 
@@ -178,7 +196,7 @@ class MacroEngine(object):
                 k = mo.group(2)  # key
                 v = mo.group(3)  # value
 
-                self.handle_replace(k, v)
+                # self.handle_replace(k, v)
 
         # Parse for DEFINE statements
         for mo in self.re_define_macro.finditer(text):
@@ -214,6 +232,24 @@ def scan_and_parse_dir(srcdir, destdir, parser):
     count = 0
 
     for root, dirs, files in os.walk(srcdir):
+
+        for filename in files:
+            dir = root[len(srcdir) + 1:]
+
+            if srcdir != root:
+                dir = '{d}/'.format(d=dir)
+
+            in_path = "{s}/{d}".format(s=srcdir, d=dir)
+            out_path = "{s}/{d}".format(s=destdir, d=dir)
+
+            in_file_path = "{p}/{f}".format(p=in_path, f=filename)
+            out_file_path = "{p}/{f}".format(p=out_path, f=filename)
+
+            if not(os.path.exists(out_path)):
+                os.makedirs(out_path)
+
+            parser.accumulateReplace(in_file_path)
+
         for filename in files:
             dir = root[len(srcdir) + 1:]
 
