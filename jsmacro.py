@@ -74,6 +74,12 @@ class MacroEngine(object):
             self.env[key] = eval(value)
 
     def handle_replace(self, key, value):
+        """
+        Replaces any occurrence of the name text with the value text, across all input files.
+
+        @param    name   String    Text to be replaced, found after the 'replace'. Can be any sequence of non-whitespace characters, ended by whitespace.
+        @param    text   String    The text to replace the name text with. Can be any sequence of non-whitespace characters, ended by a newline.
+        """
         if key not in self.replacements:
             self.replacements[key] = value
 
@@ -103,11 +109,11 @@ class MacroEngine(object):
 
     def handle_ifdef(self, arg, text):
         """
-        @param    arg    String    Statement found after the 'ifdef'. Currently expected to be a variable (i.e., key) in the env dictionary.
-        @param    text   String    The text found between the macro statements
-
         An ifdef is true if the variable 'arg' exists in the environment, regardless of whether
         it resolves to True or False.
+
+        @param    arg    String    Statement found after the 'ifdef'. Currently expected to be a variable (i.e., key) in the env dictionary.
+        @param    text   String    The text found between the macro statements
         """
         parts = re.split(self.re_else_pattern, text)
 
@@ -157,11 +163,7 @@ class MacroEngine(object):
         # at runtime :-)
         return getattr(self, "handle_{m}".format(m=method))(args, code)
 
-    def accumulateReplace(self, file_name):
-        now = datetime.now()
-
-        # Save this for the @import implementation
-        self._basepath = os.path.realpath(os.path.dirname(file_name))
+    def accumulate_replace(self, file_name):
 
         fp = open(file_name, 'r')
         text = fp.read()
@@ -190,14 +192,6 @@ class MacroEngine(object):
             self.re_time_sub_macro.sub('{s}'.format(s=now.strftime("%I:%M%p")),
             self.re_datetime_sub_macro.sub('{s}'.format(s=now.strftime("%b %d, %Y %I:%M%p")), text)))
 
-        # Parse for REPLACE statements
-        for mo in self.re_replace_macro.finditer(text):
-            if mo:
-                k = mo.group(2)  # key
-                v = mo.group(3)  # value
-
-                # self.handle_replace(k, v)
-
         # Parse for DEFINE statements
         for mo in self.re_define_macro.finditer(text):
             if mo:
@@ -209,7 +203,7 @@ class MacroEngine(object):
 
                 self.handle_define(k, v)
 
-        # Perform replacements
+        # Perform all REPLACE statements
         for key in self.replacements:
             text = text.replace(key, self.replacements[key])
 
@@ -233,6 +227,8 @@ def scan_and_parse_dir(srcdir, destdir, parser):
 
     for root, dirs, files in os.walk(srcdir):
 
+        # First accumulate any replace tags
+
         for filename in files:
             dir = root[len(srcdir) + 1:]
 
@@ -248,7 +244,9 @@ def scan_and_parse_dir(srcdir, destdir, parser):
             if not(os.path.exists(out_path)):
                 os.makedirs(out_path)
 
-            parser.accumulateReplace(in_file_path)
+            parser.accumulate_replace(in_file_path)
+
+        # Then process each file individually
 
         for filename in files:
             dir = root[len(srcdir) + 1:]
@@ -295,6 +293,9 @@ def scan_for_test_files(dirname, parser):
                 in_file_path = "{d}/{f}".format(d=dirname, f=in_filename)
                 out_file_path = "{d}/{f}out.js".format(d=dirname, f=in_filename[:-5])
 
+                # Accumulate any replace tags
+                parser.accumulate_replace(in_file_path)
+                # Parse the file
                 in_parsed = parser.parse(in_file_path)
 
                 out_file = open(out_file_path, 'r')
@@ -387,6 +388,9 @@ if __name__ == "__main__":
             break
 
         if o == "-f" or o == "--file":
+            # Accumulate any replace tags
+            p.accumulate_replace(a)
+            # Parse the file
             print(p.parse(a))
             break
 

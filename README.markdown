@@ -7,7 +7,7 @@ jsmacro is pre-processor designed for use with JavaScript (where "macro" current
 
 This tool was developed to meet a desire to strip Debug and Test code from production JavaScript files in an automated manner (thus reducing a little burden on developers, and encouraging the inclusion of tests in one's code.)
 
-### Example 1: DEBUG set to True. The macro definitions are removed, but the debug code is left in-tact.
+### Example 1: Conditional compilation with DEBUG set to True. The macro definitions are removed, but the debug code is left in-tact.
 
 #### Source JavaScript
     //@define DEBUG 1
@@ -31,7 +31,7 @@ This tool was developed to meet a desire to strip Debug and Test code from produ
       print "Hi";
     };
 
-### Example 2: DEBUG set to False. The macro definitions and contents are removed.
+### Example 2: Conditional compilation with DEBUG set to False. The macro definitions and contents are removed.
 
 #### Source JavaScript
     //@define DEBUG 0
@@ -53,6 +53,33 @@ This tool was developed to meet a desire to strip Debug and Test code from produ
       print "Hi";
     };
 
+### Example 3: Using @replace for constants.
+
+The @replace tag is flexible and can have many uses, the example below shows a simple way to use it to replace constant values.
+
+#### Source JavaScript
+
+    //@replace MyGame.CANVAS_WIDTH 800
+    //@replace MyGame.CANVAS_HEIGHT 600
+
+    var MyGame = function(){
+
+      this.canvas = Document.createElement('canvas');
+      this.canvas.width = MyGame.CANVAS_WIDTH;
+      this.canvas.height = MyGame.CANVAS_HEIGHT;
+
+    };
+
+#### Resulting JavaScript
+
+    var MyGame = function(){
+
+      this.canvas = Document.createElement('canvas');
+      this.canvas.width = 800;
+      this.canvas.height = 600;
+
+    };
+
 
 jsmacro doesn't bother to clean up extra whitespace or line-breaks that result in macro parsing, since that's the job of a JavaScript minifier (which in my case, is the tool that runs next in my build process, right after jsmacro.)
 
@@ -66,14 +93,19 @@ jsmacro currently supports:
  - //@ifdef (with optional //@else)
  - //@ifndef (with optional //@else)
  - //@strip
+ - //@replace
 
-(Note that all macros can be written with a '//#' instead of a '//@', if that makes you more comfortable.)
+Note: All macros can be written with a '//#' instead of a '//@', if that makes you more comfortable.
+Note: The @replace tag is not supported in jsmacro_25.py. 
 
 
 Why bother?
 -----------
 1. Conditional "compiling" allows one to leave in test/debug/logging/etc. for development and debugging, and have it automatically removed in production builds.  Used well, it can offer a productivity boost.  Alternatively, one can use jsmacro to build target-specific JavaScript (e.g., perhaps doing string concatenation differently on IE6 than on Chrome.)
+
 2. Traditional C-preprocessor syntax isn't valid JavaScript.  The "//@" syntax used by jsmacro is valid JavaScript, thus source files run just fine in the browser without needing preprocssing.  (i.e., The original source files are what you use in development, and crunch with jsmacro only for creating production releases.)
+
+3. As well as conditional compilation, the inlining of constant values can further reduce the size of the resulting JavaScript when used correctly.  In addition, replacing variable lookups with a constant value may offer slight performance increases in extreme situations.
 
 
 Why Python?
